@@ -19,15 +19,16 @@ void sendOdometryData(double x, double y, double theta); //Sends the Odometry da
 void sendTransform(); //Sends the transform of the scanner with respect to the base_link
 int main(int argc, char **argv)
 {
-	std::ifstream file("/home/thomas/catkin_ws/src/dataset_reader/src/intel.log"); //loads the raw log file.
+	std::ifstream file("/home/thomas/Downloads/mit-csail-3rd-floor-2005-12-17-run4.log"); //loads the raw log file.
 
 	if(file.is_open()) //Checks if the file can be opened
 	{
+		int turn=0;
 		ros::init(argc, argv, "Reader_Node");
 		ros::NodeHandle n; 
 		pub_Laser = n.advertise<sensor_msgs::LaserScan>("scan", 1000); //publishes to the topic 'scan'.
 		pub_Odom = n.advertise<nav_msgs::Odometry>("odom", 1000); //publishes to the topic 'odom'.
-		ros::Rate loop_rate(20); //The rate at which it pushes the data. The slower the publishing, the more accurate the map.
+		ros::Rate loop_rate(2); //The rate at which it pushes the data. The slower the publishing, the more accurate the map.
 		std::string line; //The current line of the file.
 		int seq =0; //The sequence number for the laser message.
 		while(std::getline(file, line) && ros::ok()) //reads the line of the file and checks if the the file is at the end or the program is killed.
@@ -36,7 +37,7 @@ int main(int argc, char **argv)
 			std::stringstream ss(line); //turns the line into a string stream
 			std::string firstWord; //first word of the line
 			ss>>firstWord;
-			if(firstWord == "FLASER") //Checks if the line is laser data
+			if(firstWord == "RAWLASER1") //Checks if the line is laser data
 			{
 				sensor_msgs::LaserScan msg; //The laserscan message
 				msg.header.seq = seq++;
@@ -44,14 +45,16 @@ int main(int argc, char **argv)
 				msg.header.frame_id  = "scan"; //Laserscan message on the scan topic
 
 //////////////////////////////////////////////////////////////////////////////////////////
+				double dummy;
+				double field_of_view;
+				ss>>dummy;
 				//Scanner and file specifics
 				int num_of_readings; //Number of points projected
-				ss>>num_of_readings;
-				msg.angle_min = -1.5708; //starting_angle of the scanner in radians 
-				msg.angle_max = 1.5708 ; //ending angle of the scanner in radians
-				msg.angle_increment = 3.14159/num_of_readings; //The angle increment per dot
+				ss>>msg.angle_min>>field_of_view>>dummy; //starting_angle of the scanner in radians 
+				msg.angle_max = msg.angle_min+field_of_view; //ending angle of the scanner in radians
+				msg.angle_increment = 2*msg.angle_max/num_of_readings; //The angle increment per dot
 				msg.range_min = 0; //The minimum range of the scanner
-				msg.range_max = 80; //The maximum range of the scanner
+				ss>>msg.range_max>>dummy>>dummy>>num_of_readings; //The maximum range of the scanner
 
 				for(int i=0; i<num_of_readings;i++) //Reads the dot ranges and places them in the laserscan message
 				{
@@ -59,6 +62,7 @@ int main(int argc, char **argv)
 					ss>>range;
 					msg.ranges.push_back(range);
 				}
+				turn = 1;
 //////////////////////////////////////////////////////////////////////////////////////////
 
 				pub_Laser.publish(msg); //publishes laserscan message
@@ -67,13 +71,14 @@ int main(int argc, char **argv)
 				loop_rate.sleep();
 
 			}
-			else if (firstWord == "ODOM") //Checks if the line is odometry data
+			else if (firstWord == "ODOM" && turn ==1) //Checks if the line is odometry data
 			{
 				double x, y, theta; //The pose of the robot
 				ss>>x;
 				ss>>y;
 				ss>>theta;
 				sendOdometryData(x,y,theta);
+				turn =0;
 				sendTransform();
 				ros::spinOnce();
 				loop_rate.sleep();
